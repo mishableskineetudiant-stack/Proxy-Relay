@@ -1,4 +1,4 @@
-from flask import Flask, request, Response
+from flask import Flask
 import requests
 import random
 import time
@@ -13,37 +13,22 @@ def update_loop():
     global proxies_list
     while True:
         try:
-            r = requests.get(PROXY_JSON_URL)
-            proxies_list = [f"http://{p['ip']}:{p['port']}" for p in r.json().get('proxies', [])]
-            print(f"Updated: {len(proxies_list)} proxies")
-        except: pass
+            r = requests.get(PROXY_JSON_URL, timeout=10)
+            data = r.json()
+            # On stocke juste l'adresse IP:PORT
+            proxies_list = [f"http://{p['ip']}:{p['port']}" for p in data.get('proxies', [])]
+            print(f"Update: {len(proxies_list)} proxies loaded")
+        except Exception as e:
+            print(f"Update failed: {e}")
         time.sleep(300)
 
 Thread(target=update_loop, daemon=True).start()
 
-@app.route('/', defaults={'path': ''}, methods=['GET', 'POST', 'PUT', 'DELETE'])
-@app.route('/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE'])
-def proxy_engine(path):
-    if not proxies_list: return "No Proxy", 502
-    
-    url = request.url.replace(request.host_url, "")
-    if not url.startswith('http'): # Si SearXNG envoie une requête relative
-        return f"Proxy Relay Active. List size: {len(proxies_list)}", 200
-
-    proxy = {"http": random.choice(proxies_list), "https": random.choice(proxies_list)}
-    
-    try:
-        resp = requests.request(
-            method=request.method,
-            url=url,
-            headers={k: v for k, v in request.headers if k.lower() != 'host'},
-            data=request.get_data(),
-            proxies=proxy,
-            timeout=10
-        )
-        return Response(resp.content, resp.status_code, resp.headers.items())
-    except:
-        return "Proxy Error", 502
+@app.route('/')
+def get_random_proxy():
+    if not proxies_list:
+        return "http://1.1.1.1:80", 200 # Fallback si vide
+    return random.choice(proxies_list)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
